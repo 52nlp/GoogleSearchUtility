@@ -14,16 +14,20 @@ import java.net.URLEncoder;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
 
 import util.GoogleResults.Result;
 
 import com.google.gson.Gson;
+import com.sun.istack.internal.logging.Logger;
 
 public class GoogleSearchUtility {
 
+	private final static Logger logger = Logger.getLogger(GoogleSearchUtility.class);
 	private static final String googleAddress = "http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q=";
 	private static final String characterSet = "UTF-8";
 	private static final String outputDirectory = "src/main/resources";
+	private static final String pdfSearchFilter = " filetype:pdf";
 	
 
 	/**
@@ -60,15 +64,33 @@ public class GoogleSearchUtility {
 	public static GoogleResults googleQueryReturnGSON(String queryString) throws IOException
 	{
 		GoogleResults googleResults = null;
+		// assuring that we are filtering by the PDF file-type
+		if(!queryString.contains(pdfSearchFilter))
+		{
+			queryString = queryString.concat(pdfSearchFilter); 
+		}
 		URL fullSearchURL = new URL(googleAddress.concat(URLEncoder.encode(queryString, characterSet)));
 		BufferedReader reader = new BufferedReader(new InputStreamReader(fullSearchURL.openStream()));
 		googleResults = new Gson().fromJson(reader, GoogleResults.class);
 		return googleResults;	
 	}
 	
+	/**
+	 * This method creates a output file to write the google search result item to disk.
+	 * 
+	 * @param pathName The string path to the directory that will contain all of the search results.
+	 * 
+	 * @param fileName The file name of the search result without the prepending URL.
+	 * 
+	 * @throws IOException
+	 */
 	private static void createOutputFile(String pathName, String fileName) throws IOException 
 	{
-		// TODO, CLG: do a sanity check on the path name
+		File outputDirectory = new File(pathName);
+		if(!outputDirectory.isDirectory())
+		{
+			throw new IOException("The output directory: " + pathName + ", does not exist on the local file system."); 
+		}
 		String fullyQualifiedFileName = Paths.get(pathName, fileName).toString(); 
 		File outputFile = new File(fullyQualifiedFileName);
 		if(!outputFile.exists())
@@ -77,13 +99,21 @@ public class GoogleSearchUtility {
 		}
 		else
 		{
-			// TODO, CLG: put a check here if the files are identical and don't need an update
+			// no check for duplicate file, can address later if a significant performance issue
 			outputFile.delete();
 			outputFile.createNewFile();
 		}
 	}
 	
-	public static void connectToURL(String urlString) throws IOException 
+	/**
+	 * This method connects the URL from the search result and writes to the file to disk (if a PDF).
+	 * 
+	 * @param urlString The full string URL to the PDF search result.
+	 * 
+	 * @throws IOException This exception is thrown if the file is not a valid PDF.
+	 * 
+	 */
+	public static void connectToURLAndWriteFileToDisk(String urlString) throws IOException 
 	{
 		// common swap space for temporary storage
 		byte[] byteArray = new byte[1024];
@@ -94,13 +124,11 @@ public class GoogleSearchUtility {
 			URLConnection connection = url.openConnection();
 			if(!connection.getContentType().equalsIgnoreCase("application/pdf"))
 			{
-				// TODO, CLG: implement a logger error
-				System.out.println("NOT a PDF.");
+				throw new IOException("The file type of the search result is not a PDF.");
 			}
 			else 
 			{
 				String shortFileName = urlString.substring(urlString.lastIndexOf("/")+1);
-				System.out.println("IS a PDF: " + shortFileName + ".");
 				createOutputFile(outputDirectory, shortFileName);
 				try
 				{
@@ -117,35 +145,14 @@ public class GoogleSearchUtility {
 				} 
 				catch (Exception e)
 				{
-					// TODO, CLG: implement a logger error message for not opening output file
-					System.out.println("ERROR: cannot open destination file to output.");					
-				}
-				
-
+					logger.log(Level.WARNING, "Cannot open destination file to output: " + shortFileName);
+				}				
 			}
 		} 
 		catch (ConnectException ce)
 		{
-			System.out.println("TODO, CLG: implement a logger.");
+			logger.log(Level.WARNING, "Cannot connect to search result URL: " + urlString);
 		}
 	}
-	
-	// TODO, CLG: testing hack -- remove and replace with wrapper method(s) or unit test(s) 
-	public static void main(String[] args)
-	{
-		try {
-			GoogleResults results = GoogleSearchUtility.googleQueryReturnGSON("Real Analysis filetype:pdf");
-			List<Result> resultList = results.getResponseData().getResults();
-			for (Result iResult : resultList)
-			{
-				System.out.println(iResult.getUrl());
-				connectToURL(iResult.getUrl());
-			}
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-	}
-	
 
 }
